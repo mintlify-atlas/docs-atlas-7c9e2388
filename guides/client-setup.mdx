@@ -1,0 +1,109 @@
+---
+title: "Setting up NetworkerClient in a Roblox LocalScript"
+description: "Connect your LocalScript to a NetworkerServer using NetworkerClient: receive server events, call server methods, and await return values with fetch."
+---
+
+`NetworkerClient` is the client-side counterpart to `NetworkerServer`. You create it inside a LocalScript with the same tag used on the server, and it automatically locates the matching remote instances. From there you can receive events fired by the server, call server-side methods, and await responses — all through a single, consistent interface.
+
+## Creating a client networker
+
+Call `Networker.client.new()` from a LocalScript. It will yield internally until the matching `_remotes/<tag>` folder exists:
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+local serviceClient = {}
+
+local networker = Networker.client.new("PointsService", serviceClient)
+```
+
+The two parameters are:
+
+| Parameter | Type | Description |
+|---|---|---|
+| `networkTag` | `string \| Instance` | Must match the tag used on the server |
+| `module` | `table` | The client table whose methods the server will call |
+
+## Full client example
+
+<Steps>
+  <Step title="Define your client module">
+    Create a table with the methods the server is allowed to call on the client. The networker routes incoming `RemoteEvent` payloads to the matching method by name.
+
+    ```luau
+    local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+    local PointsServiceClient = {}
+
+    -- The server calls this via networker:fire(player, "onPointsUpdated", amount)
+    function PointsServiceClient:onPointsUpdated(amount: number)
+        print("Points updated:", amount)
+    end
+
+    -- The server calls this via networker:fireAll("onLeaderboardUpdated", data)
+    function PointsServiceClient:onLeaderboardUpdated(data: {})
+        -- update your leaderboard UI
+    end
+
+    local networker = Networker.client.new("PointsService", PointsServiceClient)
+    ```
+  </Step>
+
+  <Step title="Call server methods with :fire()">
+    Use `:fire()` to send a one-way event to the server. The server must have the method whitelisted in `clientAccess`.
+
+    ```luau
+    -- Fire and forget — no return value
+    networker:fire("getPoints")
+    ```
+
+    The server receives this through `OnServerEvent` and routes it to the matching method on your service.
+  </Step>
+
+  <Step title="Await server return values with :fetch()">
+    Use `:fetch()` when you need a return value. It invokes the `RemoteFunction` and yields until the server responds.
+
+    ```luau
+    -- Yields until the server returns a value
+    local currentPoints = networker:fetch("getPoints")
+    print("My points:", currentPoints)
+    ```
+
+    <Warning>
+      `:fetch()` yields the calling thread. Call it inside a coroutine or task if you do not want to block execution.
+    </Warning>
+  </Step>
+
+  <Step title="Clean up when done">
+    Call `:destroy()` to disconnect all listeners and clean up signals.
+
+    ```luau
+    networker:destroy()
+    ```
+  </Step>
+</Steps>
+
+## How server-to-client routing works
+
+When the server calls `networker:fire(player, "onPointsUpdated", 150)`, the payload arrives on the client as a `RemoteEvent` with the method name as the first argument. `NetworkerClient` intercepts this in its `OnClientEvent` handler and calls `module["onPointsUpdated"](module, 150)` — so your module method is invoked with the module as `self` followed by any extra arguments.
+
+<Note>
+  The method must exist on the `module` table you passed to `Networker.client.new()`. If it does not, the client will throw an error.
+</Note>
+
+## Quick reference
+
+<CardGroup cols={2}>
+  <Card title=":fire(method, ...)" icon="arrow-up">
+    Fires a `RemoteEvent` to the server. One-way, no return value. The method must be whitelisted on the server.
+  </Card>
+  <Card title=":fetch(method, ...)" icon="arrow-right-arrow-left">
+    Invokes a `RemoteFunction` on the server and yields for the result. Use for request/response patterns.
+  </Card>
+  <Card title="module methods" icon="arrow-down">
+    Methods on your client module are called by the server via `:fire()` and `:fireAll()`. No registration needed.
+  </Card>
+  <Card title=":destroy()" icon="trash">
+    Cleans up all connections and signals. Called automatically when the server destroys its networker.
+  </Card>
+</CardGroup>

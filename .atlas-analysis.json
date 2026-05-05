@@ -1,0 +1,65 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Networker",
+  "projectDescription": "A Roblox Luau library that replaces RemoteEvents with a clean, structured client-server communication API.",
+  "theme": "luma",
+  "primaryColor": "#4F8EF7",
+  "lightColor": "#EBF2FE",
+  "darkColor": "#1A3A6E",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "installation", "quickstart"]
+          },
+          {
+            "group": "Guides",
+            "pages": ["guides/server-setup", "guides/client-setup", "guides/instance-networking", "guides/recipients", "guides/data-sync"]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "API",
+            "pages": ["api/networker-server", "api/networker-client", "api/types"]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Clean replacement for Roblox RemoteEvents and RemoteFunctions",
+    "Whitelist-based client access control for server methods",
+    "Fire methods to individual players, all players, or exclusion groups",
+    "Built-in recipient groups for targeted broadcasts",
+    "Server-to-client data sync with changed signals",
+    "Instance-based network tagging for dynamic objects",
+    "Automatic cleanup on instance destruction"
+  ],
+  "publicApiSurface": [
+    "Networker.server.new(networkTag, module, clientAccess)",
+    "Networker.client.new(networkTag, module)",
+    "NetworkerServer:fire(players, method, ...)",
+    "NetworkerServer:fireAll(method, ...)",
+    "NetworkerServer:fireAllExcept(players, method, ...)",
+    "NetworkerServer:fireRecipients(method, ...)",
+    "NetworkerServer:addClientAccess(module, methods)",
+    "NetworkerServer:addRecipient(player)",
+    "NetworkerServer:removeRecipient(player)",
+    "NetworkerServer:clearRecipients()",
+    "NetworkerServer:set(players, index, value)",
+    "NetworkerServer:setAll(index, value)",
+    "NetworkerServer:setAllExcept(players, index, value)",
+    "NetworkerServer:setRecipients(index, value)",
+    "NetworkerServer:destroy()",
+    "NetworkerClient:fire(method, ...)",
+    "NetworkerClient:fetch(method, ...)",
+    "NetworkerClient:getServerChangedSignal(key)",
+    "NetworkerClient:destroy()"
+  ]
+}

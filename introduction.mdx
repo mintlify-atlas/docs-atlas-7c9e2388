@@ -1,0 +1,36 @@
+---
+title: "Networker: Roblox client-server networking library"
+description: "Networker is a Luau library that replaces RemoteEvents with a structured, method-based API for clean, access-controlled client-server communication."
+---
+
+Roblox networking with raw `RemoteEvent` and `RemoteFunction` instances gets messy fast — scattered remotes, no access control, and no clear ownership. Networker replaces that pattern with a structured API where each service or object owns its own networker, you declare exactly which methods clients are allowed to call, and everything is automatically wired up under a single `_remotes` folder.
+
+## How it works
+
+When you create a `NetworkerServer`, Networker creates a `Folder` inside `_remotes` (parented to the Networker module itself) named after your `networkTag`. That folder holds one `RemoteEvent` and one `RemoteFunction`. The `NetworkerClient` waits for that folder to appear, then connects to both remotes automatically. All method routing is handled internally — you never reference a `RemoteEvent` directly.
+
+## Two classes
+
+**`NetworkerServer`** runs on the server. You pass it a `networkTag`, the module (table/class) that owns the methods, and a `clientAccess` list of the specific functions clients are permitted to call. The server also exposes `fire`, `fireAll`, `fireAllExcept`, and `fireRecipients` to push events down to clients.
+
+**`NetworkerClient`** runs on the client. You pass it the same `networkTag` and a module table that contains the methods the server can invoke on the client. It exposes `fire` (fire-and-forget to the server) and `fetch` (invoke the server and yield for a return value).
+
+## Key features
+
+- **Explicit access control** — only methods you list in `clientAccess` can be called by clients; all others are blocked
+- **Method-based routing** — call methods by name instead of managing individual remote instances
+- **Instance tagging** — pass a Roblox `Instance` as the `networkTag` to tie a networker's lifetime to that object
+- **Data sync** — `set` / `setAll` push values to clients and fire `getServerChangedSignal` signals automatically
+- **Recipient targeting** — `addRecipient` / `removeRecipient` let you maintain a player subset and fire to them with `fireRecipients`
+- **Automatic cleanup** — `destroy` removes the remotes folder and disconnects all connections
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Install Networker" icon="package" href="/installation">
+    Add Networker to your project with Wally and sync it into Roblox Studio.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build a working server and client example in minutes.
+  </Card>
+</CardGroup>

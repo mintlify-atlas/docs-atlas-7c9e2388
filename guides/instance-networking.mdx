@@ -1,0 +1,138 @@
+---
+title: "Using a Roblox Instance as a Networker network tag"
+description: "Pass a Roblox Instance as the network tag to bind a networker's lifetime to that object and avoid naming collisions for dynamically spawned parts."
+---
+
+String tags work well for services that live for the entire session, but many games spawn objects dynamically — projectiles, interactive props, vehicles, dungeon rooms — where each instance needs its own network channel. Passing a Roblox `Instance` directly as the `networkTag` solves this: Networker generates a unique tag automatically, binds it to the object, and cleans everything up the moment the object is destroyed.
+
+## How it works
+
+When you pass an `Instance` to `NetworkerServer.new()`, Networker:
+
+1. Generates a 13-character GUID and stores it as the `__networkTag` attribute on the instance.
+2. Uses that GUID as the actual network tag for the `_remotes` folder.
+3. Listens for the instance's `Destroying` event and calls `:destroy()` automatically.
+
+On the client side, `NetworkerClient.new()` receives the same `Instance`. If the `__networkTag` attribute is not yet set (the server hasn't run yet), the client waits for `GetAttributeChangedSignal("__networkTag")` before proceeding.
+
+## Server example
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+local PropService = {}
+
+function PropService:spawnProp(player: Player)
+    local part = Instance.new("Part")
+    part.Parent = workspace
+
+    -- Pass the Instance directly — Networker assigns a GUID tag automatically
+    local networker = Networker.server.new(part, self, {
+        self.onInteract,
+    })
+
+    -- When `part` is destroyed, `networker` is destroyed too
+end
+
+-- Clients can call this to interact with the specific prop
+function PropService:onInteract(player: Player)
+    print(player.Name, "interacted with a prop")
+end
+
+return PropService
+```
+
+## Client example
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+local PropClient = {}
+
+function PropClient:watchProp(part: Part)
+    -- Pass the same Instance — client waits for __networkTag attribute if needed
+    local networker = Networker.client.new(part, self)
+
+    -- Fire the server-side onInteract method when the player clicks
+    part.ClickDetector.MouseClick:Connect(function()
+        networker:fire("onInteract")
+    end)
+
+    -- networker is cleaned up automatically when `part` is destroyed
+end
+
+function PropClient:onPropEffect(effectName: string)
+    print("Effect triggered:", effectName)
+end
+
+return PropClient
+```
+
+## Full server + client example
+
+<Tabs>
+  <Tab title="Server">
+    ```luau
+    local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+    local BombService = {}
+
+    function BombService:spawnBomb(position: Vector3)
+        local bomb = Instance.new("Part")
+        bomb.Shape = Enum.PartType.Ball
+        bomb.Position = position
+        bomb.Parent = workspace
+
+        local networker = Networker.server.new(bomb, self, {
+            self.defuse,
+        })
+
+        -- Detonate after 10 seconds
+        task.delay(10, function()
+            networker:fireAll("onExplode", position)
+            bomb:Destroy()
+            -- networker:destroy() is called automatically when bomb is destroyed
+        end)
+    end
+
+    function BombService:defuse(player: Player)
+        print(player.Name, "defused the bomb")
+    end
+
+    return BombService
+    ```
+  </Tab>
+  <Tab title="Client">
+    ```luau
+    local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+    local BombClient = {}
+
+    -- Called externally when a bomb part is added to the workspace
+    function BombClient:trackBomb(bomb: Part)
+        local networker = Networker.client.new(bomb, self)
+
+        -- Attempt to defuse on click
+        bomb.ClickDetector.MouseClick:Connect(function()
+            networker:fire("defuse")
+        end)
+    end
+
+    -- Server fires this on all clients just before the bomb is destroyed
+    function BombClient:onExplode(position: Vector3)
+        print("Explosion at", position)
+        -- play explosion effect
+    end
+
+    return BombClient
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  Because each instance gets its own GUID-based tag, you can spawn hundreds of networked objects simultaneously without any naming collisions. You never need to pick unique string names for dynamic objects.
+</Note>
+
+<Warning>
+  Do not call `NetworkerServer.new()` on an instance that already has a `__networkTag` attribute set — this indicates another networker is already bound to it and will throw an error.
+</Warning>

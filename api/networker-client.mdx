@@ -1,0 +1,162 @@
+---
+title: "NetworkerClient — complete client-side API reference"
+description: "Full reference for NetworkerClient: constructor, fire for one-way calls, fetch for yielding invocations, getServerChangedSignal, and the destroy method."
+---
+
+`NetworkerClient` is the client-side half of a Networker pair. It locates the remotes created by the matching `NetworkerServer`, routes incoming server events to methods on a client module, and exposes `fire` and `fetch` for calling server-side methods. It also provides change signals for values pushed by the server's `set` methods.
+
+<Note>
+  `NetworkerClient` can only be instantiated on the client. Calling `NetworkerClient.new` from a server script will throw an error.
+</Note>
+
+---
+
+## Constructor
+
+### `NetworkerClient.new`
+
+```luau
+NetworkerClient.new(networkTag, module)
+```
+
+Creates a new `NetworkerClient` and connects it to the remotes registered by the corresponding `NetworkerServer`. When `networkTag` is a Roblox `Instance`, the constructor waits for the `__networkTag` attribute to be set by the server before proceeding.
+
+<ParamField path="networkTag" type="string | Instance" required>
+  Must match the `networkTag` used by the corresponding `NetworkerServer`. Pass the same string name, or the same `Instance` reference used on the server.
+</ParamField>
+
+<ParamField path="module" type="table" required>
+  The client-side table or class. The server can fire methods on this module, and `set` calls from the server write values directly to this table.
+</ParamField>
+
+**Returns** `NetworkerClient`
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+local ClientModule = {}
+
+local networker = Networker.client.new("MyService", ClientModule)
+
+function ClientModule:onRoundStart(roundData)
+    -- called when the server fires "onRoundStart"
+end
+```
+
+<Tip>
+  When using an `Instance` as the tag, `NetworkerClient.new` will yield until the server sets the `__networkTag` attribute on that instance. Construct the client networker after (or concurrently with) the server networker to avoid indefinite waits.
+</Tip>
+
+---
+
+## Calling the server
+
+### `fire`
+
+```luau
+networker:fire(method, ...)
+```
+
+Fires a `RemoteEvent` to the server, invoking `method` on the server module. This is a one-way call — no return value is received.
+
+<ParamField path="method" type="string" required>
+  The name of the server method to invoke. The method must be registered via `clientAccess` on the `NetworkerServer`.
+</ParamField>
+
+<ParamField path="..." type="any">
+  Optional arguments forwarded to the server method. The calling `Player` is automatically prepended by Roblox before any arguments you pass.
+</ParamField>
+
+```luau
+-- Tell the server the player interacted with an object
+networker:fire("onObjectInteracted", objectId)
+```
+
+<Note>
+  `fire` does nothing when called outside a running game (for example, in Studio's edit mode). This is intentional and safe to call unconditionally.
+</Note>
+
+---
+
+### `fetch`
+
+```luau
+networker:fetch(method, ...): ...any
+```
+
+Invokes a `RemoteFunction` on the server and returns the result. The calling thread **yields** until the server responds.
+
+<ParamField path="method" type="string" required>
+  The name of the server method to invoke. Must be registered in `clientAccess` on the `NetworkerServer`.
+</ParamField>
+
+<ParamField path="..." type="any">
+  Optional arguments forwarded to the server method.
+</ParamField>
+
+**Returns** `...any` — the values returned by the server method.
+
+<Warning>
+  `fetch` yields the current thread. Do not call it in contexts that cannot yield (for example, `RenderStepped` callbacks or `Changed` event handlers). Use it inside a `task.spawn` or a coroutine when yielding would be problematic.
+</Warning>
+
+```luau
+-- Request data from the server and wait for the response
+local inventory = networker:fetch("getInventory")
+
+-- With arguments
+local itemData = networker:fetch("getItemDetails", itemId)
+```
+
+---
+
+## Listening for changes
+
+### `getServerChangedSignal`
+
+```luau
+networker:getServerChangedSignal(key): Signal
+```
+
+Returns a `Signal` that fires whenever the server calls `set`, `setAll`, `setAllExcept`, or `setRecipients` with the given `key` for this client. The signal is created lazily on first call.
+
+<ParamField path="key" type="string" required>
+  The index name to watch. Matches the `index` argument passed to the server's `set` methods.
+</ParamField>
+
+**Returns** `Signal<any>` — fires with the new value each time the server updates the key.
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+local PlayerData = {}
+
+local networker = Networker.client.new("PlayerData", PlayerData)
+
+-- React whenever the server updates "coins"
+networker:getServerChangedSignal("coins"):Connect(function(newValue)
+    updateCoinDisplay(newValue)
+end)
+```
+
+<Tip>
+  You can connect to the signal before the server has sent any value. The signal only fires on updates — it does not replay the current value on connection.
+</Tip>
+
+---
+
+## Lifecycle
+
+### `destroy`
+
+```luau
+networker:destroy()
+```
+
+Destroys the underlying remotes folder, disconnects all change signals, and cleans up any instance-related connections. After calling `destroy`, the networker is no longer usable.
+
+```luau
+networker:destroy()
+```
+
+<Warning>
+  Calling `destroy` on the client destroys the shared remotes folder. If you need to shut down a networker cleanly, prefer calling `destroy` from the server side, which also clears the remotes folder and handles Instance attribute cleanup.
+</Warning>

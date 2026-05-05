@@ -1,0 +1,150 @@
+---
+title: "Syncing server values to clients using set methods"
+description: "Push values from the server directly onto client module tables using set methods, then react to changes on the client with getServerChangedSignal."
+---
+
+Networker's set methods give you a lightweight way to push server-authoritative values down to clients without writing custom remote events for each piece of data. The server calls `:set()` or `:setAll()` with a key and value; on the client, Networker writes that value directly onto your module table and fires a changed signal so you can react immediately.
+
+## Sending values from the server
+
+The four set methods mirror the four fire methods, targeting different player groups:
+
+```luau
+-- Push to a single player or list
+networker:set(player, "coins", 500)
+
+-- Push to every connected player
+networker:setAll("serverMessage", "The event has started!")
+
+-- Push to everyone except specific players
+networker:setAllExcept(player, "globalBuff", "speedBoost")
+
+-- Push to the current recipient list
+networker:setRecipients("zoneScore", 42)
+```
+
+Each call internally sends a `RemoteEvent` with a special `__set` tag, the key name, and the value. No separate remote setup is needed.
+
+## Receiving values on the client
+
+When a set event arrives on the client, Networker does two things:
+
+1. Assigns the value directly: `module[key] = value`
+2. Fires the corresponding changed signal if one has been subscribed to
+
+This means your module table is always up to date, and you can react to changes through a signal rather than polling.
+
+### Listening with getServerChangedSignal
+
+```luau
+local networker = Networker.client.new("EconomyService", economyClient)
+
+-- Returns a Signal that fires whenever the server sets "coins" on this client
+local coinsChanged = networker:getServerChangedSignal("coins")
+
+coinsChanged:Connect(function(newValue)
+    print("Coins updated to:", newValue)
+    -- update your coins UI here
+end)
+```
+
+The signal is created lazily — calling `getServerChangedSignal()` for the same key multiple times returns the same signal instance.
+
+## Full example
+
+<Tabs>
+  <Tab title="Server">
+    ```luau
+    local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+    local EconomyService = {}
+    EconomyService.playerData = {} -- { [Player]: { coins: number } }
+
+    function EconomyService:init()
+        self.networker = Networker.server.new("EconomyService", self, {
+            self.purchaseItem,
+        })
+    end
+
+    function EconomyService:playerAdded(player: Player)
+        self.playerData[player] = { coins = 100 }
+
+        -- Sync initial state to the joining player
+        self.networker:set(player, "coins", self.playerData[player].coins)
+    end
+
+    function EconomyService:awardCoins(player: Player, amount: number)
+        local data = self.playerData[player]
+        if not data then return end
+
+        data.coins += amount
+
+        -- Push the updated value to that player only
+        self.networker:set(player, "coins", data.coins)
+    end
+
+    function EconomyService:purchaseItem(player: Player, itemId: string): boolean
+        local data = self.playerData[player]
+        local cost = self:getItemCost(itemId)
+        if not data or data.coins < cost then
+            return false
+        end
+
+        data.coins -= cost
+        self.networker:set(player, "coins", data.coins)
+        return true
+    end
+
+    return EconomyService
+    ```
+  </Tab>
+  <Tab title="Client">
+    ```luau
+    local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+    local EconomyClient = {}
+    EconomyClient.coins = 0  -- set directly by the server via __set
+
+    local networker = Networker.client.new("EconomyService", EconomyClient)
+
+    -- React every time the server pushes a new coins value
+    networker:getServerChangedSignal("coins"):Connect(function(newCoins)
+        print("Wallet updated:", newCoins)
+        -- update HUD label here
+    end)
+
+    -- Purchase an item and check whether it succeeded
+    local function tryBuy(itemId: string)
+        local success = networker:fetch("purchaseItem", itemId)
+        if success then
+            print("Purchased", itemId)
+        else
+            print("Not enough coins")
+        end
+    end
+
+    return EconomyClient
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  The value is written directly onto the module table (`module[key] = value`), so `EconomyClient.coins` will always reflect the latest value pushed by the server — no manual assignment needed on the client side.
+</Note>
+
+## Signal lifecycle
+
+Changed signals are stored inside the `NetworkerClient` instance and destroyed when `:destroy()` is called. You do not need to manage them manually.
+
+```luau
+-- Get a signal for any key you want to observe
+local healthChanged = networker:getServerChangedSignal("health")
+local staminaChanged = networker:getServerChangedSignal("stamina")
+
+healthChanged:Connect(function(value)
+    -- react to health updates
+end)
+
+-- Both signals are cleaned up automatically when the networker is destroyed
+networker:destroy()
+```

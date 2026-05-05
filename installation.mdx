@@ -1,0 +1,80 @@
+---
+title: "Install Networker using Wally and Rojo in Roblox Studio"
+description: "Add Networker to your Roblox project using the Wally package manager, run wally install, and sync the Packages folder into Studio using Rojo."
+---
+
+Networker is distributed through [Wally](https://wally.run), the Luau package manager for Roblox. Installation takes three steps: add the dependency, run the install, and sync the resulting `Packages` folder into Roblox Studio with Rojo.
+
+## Prerequisites
+
+- **Wally** `0.3.2` or later — the package manager used to install Networker
+- **Rojo** `7.4.4` or later — used to sync your project files into Roblox Studio
+
+Both tools are managed by [Rokit](https://github.com/rojo-rbx/rokit). If you have a `rokit.toml` in your project, run `rokit install` to get the correct versions.
+
+## Installation steps
+
+<Steps>
+  <Step title="Add Networker to wally.toml">
+    Open your project's `wally.toml` and add Networker under `[dependencies]`:
+
+    ```toml wally.toml
+    [dependencies]
+    networker = "leifstout/networker@0.3.1"
+    ```
+
+    <Note>
+      Wally will also install `sleitnick/signal@2.0.3` automatically — it is a required dependency of Networker and does not need to be added manually.
+    </Note>
+  </Step>
+
+  <Step title="Run wally install">
+    In your terminal, run:
+
+    ```bash
+    wally install
+    ```
+
+    Wally downloads Networker (and Signal) into a `Packages/` folder at your project root.
+  </Step>
+
+  <Step title="Sync with Rojo">
+    Make sure your `default.project.json` (or equivalent Rojo project file) maps the `Packages` folder into `ReplicatedStorage`. A minimal example:
+
+    ```json default.project.json
+    {
+      "name": "my-game",
+      "tree": {
+        "$className": "DataModel",
+        "ReplicatedStorage": {
+          "Packages": {
+            "$path": "Packages"
+          }
+        }
+      }
+    }
+    ```
+
+    Then start Rojo and connect in Roblox Studio:
+
+    ```bash
+    rojo serve
+    ```
+
+    Your `Packages` folder will appear in `ReplicatedStorage` inside Studio.
+  </Step>
+</Steps>
+
+## Requiring Networker
+
+Once synced, require Networker from wherever your scripts live. The path depends on where you mapped `Packages` in your Rojo config:
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+```
+
+`Networker.server` and `Networker.client` are the two constructors. Use `Networker.server.new(...)` in server scripts and `Networker.client.new(...)` in local scripts.
+
+<Tip>
+  Import Networker at the top of each script that needs it. Because `require` caches the module, there is no performance cost to requiring it in multiple scripts.
+</Tip>

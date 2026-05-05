@@ -1,0 +1,131 @@
+---
+title: "Setting up NetworkerServer in a Roblox game service"
+description: "Configure server-side networking with NetworkerServer: wrap RemoteEvents, whitelist client-callable methods, fire events to players, and sync data."
+---
+
+`NetworkerServer` is the server-side half of Networker. When you create one, it automatically builds a `RemoteEvent` and `RemoteFunction` inside a `_remotes` folder hierarchy — no manual remote instance management required. You hand it a unique tag, your service module, and an optional list of methods clients are permitted to call, and Networker handles routing from there.
+
+## Creating a server networker
+
+Call `Networker.server.new()` from a Script (server context only — an assertion will error if you call it from a LocalScript):
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+local myService = {}
+
+function myService:init()
+    self.networker = Networker.server.new("myService", self, {
+        self.onClientRequest,
+    })
+end
+```
+
+The three parameters are:
+
+| Parameter | Type | Description |
+|---|---|---|
+| `networkTag` | `string \| Instance` | Unique identifier for this networker |
+| `module` | `table?` | The service or class the networker routes calls to |
+| `clientAccess` | `{ function }?` | Whitelist of methods clients may invoke |
+
+## Full service example
+
+<Steps>
+  <Step title="Define your service">
+    Create a module with an `init` function and the methods you want to expose.
+
+    ```luau
+    local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+    local PointsService = {}
+
+    -- Called by the server to initialize the service
+    function PointsService:init()
+        self.networker = Networker.server.new("PointsService", self, {
+            self.getPoints,
+        })
+    end
+
+    -- Clients are allowed to call this method
+    function PointsService:getPoints(player: Player): number
+        return self.pointsData[player] or 0
+    end
+
+    -- Server-only — not in the clientAccess list, so clients cannot invoke it
+    function PointsService:awardPoints(player: Player, amount: number)
+        self.pointsData[player] = (self.pointsData[player] or 0) + amount
+        self.networker:fire(player, "onPointsUpdated", self.pointsData[player])
+    end
+
+    return PointsService
+    ```
+  </Step>
+
+  <Step title="Fire events to clients">
+    Use `:fire()`, `:fireAll()`, or `:fireAllExcept()` to push events down to clients.
+
+    ```luau
+    -- Fire to one player
+    self.networker:fire(player, "onPointsUpdated", 150)
+
+    -- Broadcast to everyone
+    self.networker:fireAll("onLeaderboardUpdated", leaderboardData)
+
+    -- Fire to everyone except a specific player
+    self.networker:fireAllExcept(player, "onAnnouncement", "A player just ranked up!")
+    ```
+  </Step>
+
+  <Step title="Clean up when done">
+    Call `:destroy()` to remove the remote instances and disconnect all connections.
+
+    ```luau
+    self.networker:destroy()
+    ```
+  </Step>
+</Steps>
+
+## Controlling client access
+
+The `clientAccess` parameter is a whitelist. Only the functions you include in that table can be invoked by clients — any call to an unlisted method logs a warning and is silently dropped:
+
+```luau
+self.networker = Networker.server.new("PointsService", self, {
+    self.getPoints,   -- clients CAN call this
+    -- self.awardPoints is NOT listed, so clients cannot call it
+})
+```
+
+### Adding access after construction
+
+Use `addClientAccess()` to register additional methods after the networker is created. This is useful when access depends on runtime conditions or when methods live on a separate module:
+
+```luau
+self.networker:addClientAccess(self, {
+    self.redeemReward,
+    self.claimDailyBonus,
+})
+```
+
+<Note>
+  `addClientAccess()` walks both the module table and its metatable `__index`, so it works with both plain tables and OOP-style classes.
+</Note>
+
+## How remote instances are organized
+
+When `NetworkerServer.new()` runs on the server, it creates the following structure under the Networker package:
+
+```
+Networker (ModuleScript)
+└── _remotes/ (Folder)
+    └── <networkTag>/ (Folder)
+        ├── RemoteEvent
+        └── RemoteFunction
+```
+
+Each networker gets its own named folder, which is how the client locates the correct remotes with `:WaitForChild()`.
+
+<Warning>
+  Creating two `NetworkerServer` instances with the same `networkTag` in the same session will throw an error. Tags must be unique across your entire server.
+</Warning>

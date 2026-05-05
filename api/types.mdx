@@ -1,0 +1,149 @@
+---
+title: "Networker Luau types, aliases, and constants reference"
+description: "Reference for NetworkTag, ClientAccess, RemotesContainer, and the Server and Client type aliases, plus SET_TAG and INSTANCE_ATTRIBUTE constants."
+---
+
+The Networker library exports a small set of types for use in strictly-typed Luau code. These types are defined in `NetworkerUtils.luau` and re-exported through `init.luau`. Understanding them helps you write type-safe wrappers, service interfaces, and module declarations without relying on `any`.
+
+---
+
+## Exported types
+
+### `NetworkTag`
+
+```luau
+export type NetworkTag = string | Instance
+```
+
+The identifier used to link a `NetworkerServer` and `NetworkerClient` together. Pass a plain string when you want a named service, or a Roblox `Instance` when you want the networker's lifetime to follow an object in the data model.
+
+<ResponseField name="NetworkTag" type="string | Instance">
+  A string tag name used as the remote folder name, or a Roblox `Instance`. When an `Instance` is used, a GUID is generated and stored as the `__networkTag` attribute on that instance. The networker is automatically destroyed when the instance is destroyed.
+</ResponseField>
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+-- String-based tag
+local networker = Networker.server.new("PlayerService", PlayerService, { ... })
+
+-- Instance-based tag (ties lifetime to the part)
+local networker = Networker.server.new(somePart, MyModule, { ... })
+```
+
+---
+
+### `ClientAccess`
+
+```luau
+export type ClientAccess = { (...any?) -> ...any? }
+```
+
+An array of function references representing the methods that clients are permitted to call on the server. Each element must be a function that exists in the `module` (or its metatable) passed to `NetworkerServer.new` or `addClientAccess`.
+
+<ResponseField name="ClientAccess" type="{ (...any?) -> ...any? }">
+  An array of variadic functions. Only methods explicitly listed here can be invoked by clients. Unlisted methods are blocked, and a warning is printed to the server output if a client attempts to call them.
+</ResponseField>
+
+```luau
+local MyService = {}
+
+function MyService.doAction(self, player: Player, actionId: string)
+    -- ...
+end
+
+function MyService.getData(self, player: Player): {}
+    -- ...
+end
+
+-- Pass method references directly — not strings
+local access: Networker.ClientAccess = {
+    MyService.doAction,
+    MyService.getData,
+}
+
+local networker = Networker.server.new("MyService", MyService, access)
+```
+
+---
+
+### `RemotesContainer`
+
+```luau
+export type RemotesContainer = Folder & {
+    RemoteEvent: RemoteEvent,
+    RemoteFunction: RemoteFunction,
+}
+```
+
+An internal type representing the `Folder` created by `NetworkerServer` to hold each networker's remotes. The folder is parented to `_remotes` inside the Networker module and is named after the resolved `networkTag` string.
+
+<ResponseField name="RemotesContainer" type="Folder">
+  A `Folder` instance with two children:
+
+  <Expandable title="properties">
+    <ResponseField name="RemoteEvent" type="RemoteEvent">
+      Used by fire methods on the server and the `fire` method on the client. Also handles `set` synchronization via the internal `__set` tag.
+    </ResponseField>
+    <ResponseField name="RemoteFunction" type="RemoteFunction">
+      Used by the client's `fetch` method to yield and await a return value from the server.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+  `RemotesContainer` is an internal type. You do not need to reference it directly in normal usage. It is documented here for completeness and for advanced use cases such as custom tooling or debugging.
+</Note>
+
+---
+
+## Type aliases from `init.luau`
+
+The top-level `Networker` module re-exports the instance types from both classes. Use these aliases to annotate variables and function signatures without importing the individual modules.
+
+### `Networker.Server`
+
+```luau
+export type Server = server.NetworkerServer
+```
+
+Type alias for a `NetworkerServer` instance.
+
+### `Networker.Client`
+
+```luau
+export type Client = client.NetworkerClient
+```
+
+Type alias for a `NetworkerClient` instance.
+
+**Usage in strict Luau:**
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+
+type ServerType = Networker.Server
+type ClientType = Networker.Client
+
+local function setupNetworker(): ServerType
+    return Networker.server.new("MyService", MyService, { MyService.doAction })
+end
+```
+
+---
+
+## Internal constants
+
+These constants are defined in `NetworkerUtils` and used internally by the library. They are documented here for reference when debugging remote traffic or building tooling on top of Networker.
+
+<ResponseField name="SET_TAG" type="string">
+  Value: `"__set"`
+
+  The method name transmitted over the `RemoteEvent` when a `set`, `setAll`, `setAllExcept`, or `setRecipients` call is made. The client intercepts this tag to write the value to the module table and fire any registered change signals, rather than routing it to a method on the module.
+</ResponseField>
+
+<ResponseField name="INSTANCE_ATTRIBUTE" type="string">
+  Value: `"__networkTag"`
+
+  The attribute name set on an `Instance` when it is used as a `NetworkTag`. Stores the generated GUID that the client reads to locate the correct remotes folder.
+</ResponseField>

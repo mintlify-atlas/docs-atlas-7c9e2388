@@ -1,0 +1,364 @@
+---
+title: "NetworkerServer — complete server-side API reference"
+description: "Full reference for NetworkerServer: constructor, fire and set targeting methods, addClientAccess, recipient management, and the destroy lifecycle method."
+---
+
+`NetworkerServer` is the server-side half of a Networker pair. It creates and owns the underlying `RemoteEvent` and `RemoteFunction` instances, exposes methods for firing events to specific players or groups, synchronizes data to clients via `set` methods, and enforces an explicit allowlist of methods that clients may invoke.
+
+---
+
+## Constructor
+
+### `NetworkerServer.new`
+
+```luau
+NetworkerServer.new(networkTag, module?, clientAccess?)
+```
+
+Creates a new `NetworkerServer` and registers its remotes under `_remotes` in the Networker module. Asserts that the server-side runtime is active — this constructor will error if called on the client.
+
+When `networkTag` is a Roblox `Instance`, a GUID is generated and stored as an attribute (`__networkTag`) on that instance. The networker is automatically destroyed when the instance is destroyed.
+
+<ParamField path="networkTag" type="string | Instance" required>
+  A unique identifier for this networker. Use a plain string for named services, or pass a Roblox `Instance` to tie the networker's lifetime to that object.
+</ParamField>
+
+<ParamField path="module" type="table">
+  The server-side service or class that clients communicate with. Required when `clientAccess` is provided.
+</ParamField>
+
+<ParamField path="clientAccess" type="{ function }">
+  An array of method references from `module` that clients are permitted to call. Only methods listed here can be invoked via `fire` or `fetch` from the client.
+</ParamField>
+
+**Returns** `NetworkerServer`
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+local MyService = {}
+
+local networker = Networker.server.new("MyService", MyService, {
+    MyService.doSomething,
+    MyService.getData,
+})
+```
+
+<Note>
+  Each `networkTag` string must be unique. Constructing two `NetworkerServer` instances with the same tag will throw an error.
+</Note>
+
+---
+
+## Firing methods
+
+These methods fire a named method on one or more clients using the underlying `RemoteEvent`. They are one-way — no return value is received from the client.
+
+### `fire`
+
+```luau
+networker:fire(players, method, ...)
+```
+
+Fires `method` to one player or a list of players.
+
+<ParamField path="players" type="Player | { Player }" required>
+  A single `Player` instance or an array of `Player` instances to fire to.
+</ParamField>
+
+<ParamField path="method" type="string" required>
+  The name of the method to invoke on the client module.
+</ParamField>
+
+<ParamField path="..." type="any">
+  Optional arguments forwarded to the client method.
+</ParamField>
+
+```luau
+-- Fire to a single player
+networker:fire(player, "onRoundStart", roundData)
+
+-- Fire to a list of players
+networker:fire({ player1, player2 }, "onRoundStart", roundData)
+```
+
+---
+
+### `fireAll`
+
+```luau
+networker:fireAll(method, ...)
+```
+
+Fires `method` to every connected player.
+
+<ParamField path="method" type="string" required>
+  The name of the method to invoke on all clients.
+</ParamField>
+
+<ParamField path="..." type="any">
+  Optional arguments forwarded to the client method.
+</ParamField>
+
+```luau
+networker:fireAll("onAnnouncement", "The round has ended!")
+```
+
+---
+
+### `fireAllExcept`
+
+```luau
+networker:fireAllExcept(players, method, ...)
+```
+
+Fires `method` to all players except those specified.
+
+<ParamField path="players" type="Player | { Player }" required>
+  The player or players to exclude.
+</ParamField>
+
+<ParamField path="method" type="string" required>
+  The name of the method to invoke.
+</ParamField>
+
+<ParamField path="..." type="any">
+  Optional arguments forwarded to the client method.
+</ParamField>
+
+```luau
+-- Notify everyone except the acting player
+networker:fireAllExcept(actingPlayer, "onPlayerActed", actingPlayer.Name)
+```
+
+---
+
+### `fireRecipients`
+
+```luau
+networker:fireRecipients(method, ...)
+```
+
+Fires `method` to the current recipient list. Prints a warning and returns early if no recipients have been added.
+
+<ParamField path="method" type="string" required>
+  The name of the method to invoke on recipient clients.
+</ParamField>
+
+<ParamField path="..." type="any">
+  Optional arguments forwarded to the client method.
+</ParamField>
+
+```luau
+networker:addRecipient(player1)
+networker:addRecipient(player2)
+networker:fireRecipients("onPrivateMessage", messageData)
+```
+
+---
+
+## Set methods
+
+`set` methods synchronize a named value to clients by firing the internal `__set` tag over the remote event. On the client side, the value is written directly to the client module and any `getServerChangedSignal` listeners are fired.
+
+### `set`
+
+```luau
+networker:set(players, index, value?)
+```
+
+Sets `index` to `value` on a specific player or list of players.
+
+<ParamField path="players" type="Player | { Player }" required>
+  The player or players to update.
+</ParamField>
+
+<ParamField path="index" type="string" required>
+  The key name to set on the client module.
+</ParamField>
+
+<ParamField path="value" type="any">
+  The value to assign. Pass `nil` to clear the key.
+</ParamField>
+
+```luau
+networker:set(player, "coins", 500)
+```
+
+---
+
+### `setAll`
+
+```luau
+networker:setAll(index, value?)
+```
+
+Sets `index` to `value` on all connected players.
+
+<ParamField path="index" type="string" required>
+  The key name to set on all client modules.
+</ParamField>
+
+<ParamField path="value" type="any">
+  The value to assign.
+</ParamField>
+
+```luau
+networker:setAll("gameState", "lobby")
+```
+
+---
+
+### `setAllExcept`
+
+```luau
+networker:setAllExcept(players, index, value?)
+```
+
+Sets `index` to `value` on all players except those specified.
+
+<ParamField path="players" type="Player | { Player }" required>
+  The player or players to exclude.
+</ParamField>
+
+<ParamField path="index" type="string" required>
+  The key name to set.
+</ParamField>
+
+<ParamField path="value" type="any">
+  The value to assign.
+</ParamField>
+
+```luau
+networker:setAllExcept(newPlayer, "hasPlayedBefore", true)
+```
+
+---
+
+### `setRecipients`
+
+```luau
+networker:setRecipients(index, value?)
+```
+
+Sets `index` to `value` on the current recipient list. Prints a warning and returns early if no recipients have been added.
+
+<ParamField path="index" type="string" required>
+  The key name to set on recipient client modules.
+</ParamField>
+
+<ParamField path="value" type="any">
+  The value to assign.
+</ParamField>
+
+```luau
+networker:setRecipients("teamScore", score)
+```
+
+---
+
+## Access control
+
+### `addClientAccess`
+
+```luau
+networker:addClientAccess(module, methods)
+```
+
+Registers additional methods that clients are allowed to call after construction. Searches both the module table and its metatable `__index` for matching functions.
+
+<ParamField path="module" type="any" required>
+  The service or class that owns the methods.
+</ParamField>
+
+<ParamField path="methods" type="{ function }" required>
+  An array of function references from `module` to allow. Each function must exist in `module` or its metatable, must not already be registered, and must be a `function` type.
+</ParamField>
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+local networker = Networker.server.new("MyService", MyService, {})
+
+-- Add access later, for example after a second module is loaded
+networker:addClientAccess(AdminService, {
+    AdminService.banPlayer,
+    AdminService.getServerStats,
+})
+```
+
+<Warning>
+  Attempting to register the same method name twice will throw an error. Ensure methods are only added once across all `addClientAccess` calls.
+</Warning>
+
+---
+
+## Recipient management
+
+Recipients are an optional subset of players used by `fireRecipients` and `setRecipients`. Use them to target a dynamic group without rebuilding a player array on every call.
+
+### `addRecipient`
+
+```luau
+networker:addRecipient(player)
+```
+
+Adds `player` to the recipient list. The list is created lazily on first use.
+
+<ParamField path="player" type="Player" required>
+  The player to add.
+</ParamField>
+
+---
+
+### `removeRecipient`
+
+```luau
+networker:removeRecipient(player)
+```
+
+Removes `player` from the recipient list. Does nothing if the list is empty or the player is not found.
+
+<ParamField path="player" type="Player" required>
+  The player to remove.
+</ParamField>
+
+---
+
+### `clearRecipients`
+
+```luau
+networker:clearRecipients()
+```
+
+Clears the entire recipient list by setting it to `nil`.
+
+```luau
+-- Build a team recipient list
+for _, player in teamPlayers do
+    networker:addRecipient(player)
+end
+
+networker:fireRecipients("onTeamUpdate", teamData)
+
+-- Reset for next round
+networker:clearRecipients()
+```
+
+---
+
+## Lifecycle
+
+### `destroy`
+
+```luau
+networker:destroy()
+```
+
+Destroys the `RemoteEvent` and `RemoteFunction`, clears the recipient list, disconnects the instance-destroying connection if one exists, and removes the `__networkTag` attribute from the bound instance if applicable.
+
+```luau
+networker:destroy()
+```
+
+<Warning>
+  After calling `destroy`, the networker and its remotes are no longer usable. Avoid calling any methods on a destroyed networker.
+</Warning>

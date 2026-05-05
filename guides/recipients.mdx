@@ -1,0 +1,106 @@
+---
+title: "Targeting player groups using NetworkerServer recipients"
+description: "Use the recipients API on NetworkerServer to maintain a mutable player list and broadcast events to a team, zone, or party with a single method call."
+---
+
+Sometimes you need to broadcast an event to a specific subset of players — the members of a dungeon party, the players inside a zone, everyone on a team — and that subset changes at runtime. The recipients API on `NetworkerServer` gives you a mutable list you can add to, remove from, and clear, then fire to all at once with `:fireRecipients()`.
+
+## Managing the recipient list
+
+Recipients are stored per-networker as a list of `Player` instances. The list starts empty and is created lazily on the first `addRecipient()` call.
+
+```luau
+-- Add a player when they enter your zone
+networker:addRecipient(player)
+
+-- Remove a player when they leave
+networker:removeRecipient(player)
+
+-- Wipe the entire list
+networker:clearRecipients()
+```
+
+## Firing and setting to recipients
+
+Once your list is populated, use `:fireRecipients()` or `:setRecipients()` to target only those players:
+
+```luau
+-- Fire a method to all current recipients
+networker:fireRecipients("onZoneEvent", eventData)
+
+-- Set a value on all current recipients
+networker:setRecipients("zoneStatus", "active")
+```
+
+If you call `:fireRecipients()` while the list is empty (or has been cleared), Networker logs a warning and does nothing.
+
+## Full zone example
+
+```luau
+local Networker = require(game.ReplicatedStorage.Packages.networker)
+local Players = game:GetService("Players")
+
+local ZoneService = {}
+
+function ZoneService:init()
+    self.networker = Networker.server.new("ZoneService", self, {
+        self.requestZoneData,
+    })
+end
+
+function ZoneService:playerEnteredZone(player: Player)
+    self.networker:addRecipient(player)
+
+    -- Notify all zone members that someone arrived
+    self.networker:fireRecipients("onPlayerArrived", player.Name)
+
+    -- Sync the current zone state to the new player only
+    self.networker:set(player, "zoneStatus", self.currentStatus)
+end
+
+function ZoneService:playerLeftZone(player: Player)
+    self.networker:removeRecipient(player)
+
+    -- Notify remaining members
+    self.networker:fireRecipients("onPlayerLeft", player.Name)
+end
+
+function ZoneService:broadcastZoneAlert(message: string)
+    -- Only players inside the zone receive this
+    self.networker:fireRecipients("onAlert", message)
+end
+
+function ZoneService:requestZoneData(player: Player)
+    return self.currentStatus
+end
+
+Players.PlayerRemoving:Connect(function(player)
+    ZoneService:playerLeftZone(player)
+end)
+
+return ZoneService
+```
+
+## Comparing fire methods
+
+All four fire methods call the same underlying `RemoteEvent` — they differ only in which players receive the event:
+
+| Method | Targets |
+|---|---|
+| `:fire(players, method, ...)` | One player or a specific list of players |
+| `:fireAll(method, ...)` | Every connected player |
+| `:fireAllExcept(players, method, ...)` | Every player except the one(s) specified |
+| `:fireRecipients(method, ...)` | The current recipient list on this networker |
+
+<Tip>
+  Use `:fireRecipients()` when the target group changes often (e.g. players entering and leaving an area). Use `:fire()` with a manually constructed list when you need a one-off broadcast to an ad-hoc group.
+</Tip>
+
+The same targeting options are available for the set methods:
+
+| Method | Targets |
+|---|---|
+| `:set(players, index, value)` | One player or a specific list |
+| `:setAll(index, value)` | Every connected player |
+| `:setAllExcept(players, index, value)` | Every player except those specified |
+| `:setRecipients(index, value)` | The current recipient list |
